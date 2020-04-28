@@ -149,16 +149,17 @@ ctx.SetDashes(offset float64, lengths ...float64)
 
 ctx.DrawPath(x, y float64, *Path)
 ctx.DrawText(x, y float64, *Text)
-ctx.DrawImage(x, y float64, image.Image, ImageEncoding, dpm float64)
+ctx.DrawImage(x, y float64, image.Image, dpm float64)
 
 c.Fit(margin float64)  // resize canvas to fit all elements with a given margin
-c.SaveSVG(filename string)
-c.SaveEPS(filename string)
-c.SavePDF(filename string)
-c.SavePNG(filename string)
-c.SaveJPG(filename string)
-c.SaveGIF(filename string)
-c.WriteImage(dpm float64) *image.RGBA
+
+c.WriteFile(filename string, svg.Writer)
+c.WriteFile(filename string, pdf.Writer)
+c.WriteFile(filename string, eps.Writer)
+c.WriteFile(filename string, rasterizer.PNGWriter(resolution DPMM))
+c.WriteFile(filename string, rasterizer.JPGWriter(resolution DPMM, opts *jpeg.Options))
+c.WriteFile(filename string, rasterizer.GIFWriter(resolution DPMM, opts *gif.Options))
+rasterizer.Draw(c *Canvas, resolution DPMM) *image.RGBA
 ```
 
 Canvas allows to draw either paths, text or images. All positions and sizes are given in millimeters.
@@ -181,6 +182,8 @@ text = richText.ToText(width, height, halign, valign, indent, lineStretch)
 
 ctx.DrawText(0.0, 0.0, text)
 ```
+
+Note that the `LoadLocalFont` function will use `fc-match "font name"` to find the closest matching font.
 
 
 ## Paths

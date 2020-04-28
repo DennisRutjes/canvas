@@ -50,6 +50,11 @@ func (r *PDF) SetInfo(title, subject, keywords, author string) {
 	r.w.pdf.SetAuthor(author)
 }
 
+// NewPage starts adds a new page where further rendering will be written to
+func (r *PDF) NewPage(width, height float64) {
+	r.w = r.w.pdf.NewPage(width, height)
+}
+
 func (r *PDF) Close() error {
 	return r.w.pdf.Close()
 }
@@ -187,8 +192,6 @@ func (r *PDF) RenderPath(path *Path, style Style, m Matrix) {
 
 func (r *PDF) RenderText(text *Text, m Matrix) {
 	r.w.StartTextObject()
-	decoPaths := []*Path{}
-	decoColors := []color.RGBA{}
 	for _, line := range text.lines {
 		for _, span := range line.spans {
 			r.w.SetFillColor(span.ff.color)
@@ -217,19 +220,10 @@ func (r *PDF) RenderText(text *Text, m Matrix) {
 			}
 			r.w.WriteText(TJ...)
 		}
-		for _, deco := range line.decos {
-			p := deco.ff.Decorate(deco.x1 - deco.x0)
-			p = p.Transform(Identity.Mul(m).Translate(deco.x0, line.y+deco.ff.voffset))
-			decoPaths = append(decoPaths, p)
-			decoColors = append(decoColors, deco.ff.color)
-		}
 	}
 	r.w.EndTextObject()
-	style := DefaultStyle
-	for i := range decoPaths {
-		style.FillColor = decoColors[i]
-		r.RenderPath(decoPaths[i], style, Identity)
-	}
+
+	text.RenderDecoration(r, m)
 }
 
 func (r *PDF) RenderImage(img image.Image, m Matrix) {
@@ -778,7 +772,7 @@ func (w *pdfPageWriter) SetFont(font *Font, size float64) {
 	if !w.inTextObject {
 		panic("must be in text object")
 	}
-	if font != w.font {
+	if font != w.font || w.fontSize != size {
 		w.font = font
 		w.fontSize = size
 
@@ -872,9 +866,16 @@ func (w *pdfPageWriter) WriteText(TJ ...interface{}) {
 		} else {
 			fmt.Fprintf(w, " (")
 		}
+
+		buf := &bytes.Buffer{}
 		indices := w.font.toIndices(s)
-		binary.Write(w, binary.BigEndian, indices)
-		fmt.Fprintf(w, ")")
+		binary.Write(buf, binary.BigEndian, indices)
+
+		s = buf.String()
+		s = strings.Replace(s, "\\", "\\\\", -1)
+		s = strings.Replace(s, "(", "\\(", -1)
+		s = strings.Replace(s, ")", "\\)", -1)
+		fmt.Fprintf(w, "%s)", s)
 	}
 
 	var sfntBuffer sfnt.Buffer
@@ -929,13 +930,14 @@ func (w *pdfPageWriter) DrawImage(img image.Image, enc ImageEncoding, m Matrix) 
 
 func (w *pdfPageWriter) embedImage(img image.Image, enc ImageEncoding) pdfName {
 	size := img.Bounds().Size()
+	sp := img.Bounds().Min // starting point
 	b := make([]byte, size.X*size.Y*3)
 	bMask := make([]byte, size.X*size.Y)
 	hasMask := false
 	for y := 0; y < size.Y; y++ {
 		for x := 0; x < size.X; x++ {
 			i := (y*size.X + x) * 3
-			R, G, B, A := img.At(x, y).RGBA()
+			R, G, B, A := img.At(sp.X+x, sp.Y+y).RGBA()
 			if A != 0 {
 				b[i+0] = byte((R * 65535 / A) >> 8)
 				b[i+1] = byte((G * 65535 / A) >> 8)
